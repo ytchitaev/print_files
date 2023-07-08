@@ -1,48 +1,65 @@
 import os
 import argparse
 import glob
+import fnmatch
 
 
-def print_files(directory, exclude_git=False, filters=None, extension=None, list_files=False, write=False):
-    files_to_print = []
+def filter_files(directory, exclude_git=False, filters=None, extension=None, recursive=False, ignore=None):
+    filtered_files = []
 
-    for filter_pattern in filters:
-        filter_pattern = os.path.join(directory, filter_pattern)
-        matching_files = glob.glob(filter_pattern)
-        
-        for file_path in matching_files:
-            if exclude_git and '.git' in file_path:
-                continue
+    if recursive:
+        for root, _, _ in os.walk(directory):
+            matching_files = glob.glob(os.path.join(root, '*'))
 
-            if extension is None or file_path.endswith(extension):
-                files_to_print.append(file_path)
+            for file_path in matching_files:
+                if exclude_git and '.git' in file_path:
+                    continue
 
-    if write:
-        with open("files_content.txt", 'w') as file:
-            if list_files:
-                for file_path in files_to_print:
-                    file.write(file_path + '\n')
-            else:
-                for file_path in files_to_print:
-                    file.write("-- FILE: " + file_path + " BEGINS\n")
-                    with open(file_path, 'r') as f:
-                        file.write(f.read())
-                    file.write('\n' + '-' * 50 + '\n')
+                ignore_file = False
+                if ignore:
+                    for ignore_pattern in ignore:
+                        if fnmatch.fnmatch(file_path, os.path.join(directory, ignore_pattern)):
+                            ignore_file = True
+                            break
+
+                if ignore_file:
+                    continue
+
+                if extension is None or file_path.endswith(extension):
+                    filtered_files.append(file_path)
     else:
-        if list_files:
-            for file_path in files_to_print:
-                print(file_path)
-        else:
-            for file_path in files_to_print:
-                print_file_contents(file_path)
+        for filter_pattern in filters:
+            filter_pattern = os.path.join(directory, filter_pattern)
+            matching_files = glob.glob(filter_pattern)
+
+            for file_path in matching_files:
+                if exclude_git and '.git' in file_path:
+                    continue
+
+                ignore_file = False
+                if ignore:
+                    for ignore_pattern in ignore:
+                        if fnmatch.fnmatch(file_path, os.path.join(directory, ignore_pattern)):
+                            ignore_file = True
+                            break
+
+                if ignore_file:
+                    continue
+
+                if extension is None or file_path.endswith(extension):
+                    filtered_files.append(file_path)
+
+    return filtered_files
 
 
-def print_file_contents(file_path):
-    with open(file_path, 'r') as file:
-        contents = file.read()
-        print(f"-- FILE: {file_path} BEGINS")
-        print(contents, '\n')
-        print('-' * 50)  # Print a line of dashes
+def write_files_content(file_paths):
+    with open("files_content.txt", 'w') as file:
+        for file_path in file_paths:
+            with open(file_path, 'r') as f:
+                contents = f.read()
+                file.write(f"-- FILE: {file_path} BEGINS\n")
+                file.write(contents + '\n')
+                file.write('-' * 100 + '\n')
 
 
 # Create the argument parser
@@ -61,9 +78,17 @@ parser.add_argument('--exclude-git', dest='exclude_git',
 parser.add_argument('--filter', dest='filter', type=str, nargs='+',
                     help='filter the files and directories to be printed')
 
+# Add the '--ignore' flag with multiple values
+parser.add_argument('--ignore', dest='ignore', type=str, nargs='+',
+                    help='ignore the specified files or directories')
+
 # Add the '--extension' argument
 parser.add_argument('--extension', dest='extension', type=str,
                     help='filter files by extension')
+
+# Add the '--recursive' flag
+parser.add_argument('--recursive', dest='recursive',
+                    action='store_true', help='search for files recursively, not compatiable with --filter or --ignore')
 
 # Add the '--list_files' flag
 parser.add_argument('--list_files', dest='list_files',
@@ -77,9 +102,16 @@ parser.add_argument('--write', dest='write',
 args = parser.parse_args()
 
 # Call the function with the specified directory, flags, and extension
-print_files(args.start_directory,
-            exclude_git=args.exclude_git,
-            filters=args.filter,
-            extension=args.extension,
-            list_files=args.list_files,
-            write=args.write)
+filtered_files = filter_files(args.start_directory,
+                              exclude_git=args.exclude_git,
+                              filters=args.filter,
+                              extension=args.extension,
+                              recursive=args.recursive,
+                              ignore=args.ignore)
+
+if args.write:
+    write_files_content(filtered_files)
+
+if args.list_files:
+    for file_path in filtered_files:
+        print(file_path)
